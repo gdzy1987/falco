@@ -180,20 +180,37 @@ void falco_engine::load_rules(const string &rules_content, bool verbose, bool al
 
 	if(!m_rules)
 	{
-		m_rules = new falco_rules(m_inspector,
-					  this,
-					  m_ls);
+		// Note that falco_formats is added to the lua state used by the falco engine only.
+		// Within the engine, only formats.
+		// Formatter is used, so we can unconditionally set json_output to false.
+		bool json_output = false;
+		bool json_include_output_property = false;
+		falco_formats::init(m_inspector, this, m_ls, json_output, json_include_output_property);
+		m_rules = new falco_rules(m_inspector, this, m_ls);
+
+		// First ever ruleset
+		uint64_t dummy;
+		m_rules->load_rules(rules_content, verbose, all_events, m_extra, m_replace_container_info, m_min_priority, dummy);
+		return;
 	}
 
-	// Note that falco_formats is added to the lua state used
-	// by the falco engine only. Within the engine, only
-	// formats.formatter is used, so we can unconditionally set
-	// json_output to false.
-	bool json_output = false;
-	bool json_include_output_property = false;
-	falco_formats::init(m_inspector, this, m_ls, json_output, json_include_output_property);
-	uint64_t dummy;
-	m_rules->load_rules(rules_content, verbose, all_events, m_extra, m_replace_container_info, m_min_priority, dummy);
+	//
+	auto local_rules = new falco_rules(m_inspector, this, m_ls);
+	try
+	{
+		uint64_t dummy;
+		local_rules->load_rules(rules_content, verbose, all_events, m_extra, m_replace_container_info, m_min_priority, dummy);
+
+		// m_rules = local_rules
+		// std::atomic<falco_rules *> lore(m_rules);
+		// std::atomic_exchange(&lore, local_rules);
+		// SCHEDULE LOCAL_RULES AS NEXT RULESET
+	}
+	catch(const falco_exception &e)
+	{
+		// todo
+		printf("IGNORE BECAUSE OF ERROR LOADING RULESET!\n");
+	}
 }
 
 // todo(fntlnz): make this do the real loading
@@ -205,6 +222,7 @@ static void rules_cb(char *rules_content, hawk_engine *engine)
 // todo(fntlnz): not sure we want this in falco_engine
 void falco_engine::watch_rules(bool verbose, bool all_events)
 {
+	// this->m_rules = nullptr;
 	hawk_watch_rules((hawk_watch_rules_cb)rules_cb, reinterpret_cast<hawk_engine *>(this));
 }
 
